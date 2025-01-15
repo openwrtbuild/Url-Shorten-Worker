@@ -1,211 +1,219 @@
-const config = {
-no_ref: "off", //Control the HTTP referrer header, if you want to create an anonymous link that will hide the HTTP Referer header, please set to "on" .
-theme:"",//Homepage theme, use the empty value for default theme. To use urlcool theme, please fill with "theme/urlcool" .
-cors: "on",//Allow Cross-origin resource sharing for API requests.
-unique_link:true,//If it is true, the same long url will be shorten into the same short url
-custom_link:false,//Allow users to customize the short url.
-safe_browsing_api_key: "" //Enter Google Safe Browsing API Key to enable url safety check before redirect.
-}
+//Homepage theme, use the empty value for default theme. To use urlcool theme, please fill with "/theme/urlcool" .
+const theme = typeof (THEME) != "undefined" ? THEME : ''
+// 项目名，决定html从哪个项目获取，
+const github_repo = typeof (GITHUB_REPO) != "undefined" ? GITHUB_REPO
+    : 'openwrtbuild/Url-Shorten-Worker'
+// 项目版本，cdn会有缓存，所以有更新时需要指定版本，
+const github_version = typeof (GITHUB_VERSION) != "undefined" ? GITHUB_VERSION
+    : '@main'
+// 密码，密码正确情况无视白名单和超时设置，且支持自定义短链接，
+const password = typeof (PASSWORD) != "undefined" ? PASSWORD
+    : 'pass yes'
+// 短链超时，单位毫秒，支持整数乘法，0表示不设置超时，
+const shorten_timeout = typeof (SHORTEN_TIMEOUT) != "undefined" ? SHORTEN_TIMEOUT.split("*").reduce((a, b) => parseInt(a) * parseInt(b), 1)
+    : (1000 * 60 * 10)
+// 默认短链key的长度，遇到重复时会自动延长，
+const default_len = typeof (DEFAULT_LEN) != "undefined" ? parseInt(DEFAULT_LEN)
+    : 6
+// 为true开启演示，否则无密码且非白名单请求不受理，是则允许访客试用，超时后失效，
+const demo_mode = typeof (DEMO_MODE) != "undefined" ? DEMO_MODE === 'true'
+    : false
+// 为true自动删除超时的演示短链接记录，否则仅是标记过期，以便在后台查询历史记录，
+const remove_completely = typeof (REMOVE_COMPLETELY) != "undefined" ? REMOVE_COMPLETELY === 'true'
+    : false
+// 白名单中的域名无视超时，json数组格式，写顶级域名就可以，自动通过顶级域名和所有二级域名，
+const white_list = JSON.parse(typeof (WHITE_LIST) != "undefined" ? WHITE_LIST
+    : `[
+"github.com",
+"google.com"
+    ]`)
+// 演示模式开启时网页上展示这段禁止滥用提示，并不需要明确表示什么时候失效，
+const demo_notice = typeof (DEMO_NOTICE) != "undefined" ? DEMO_NOTICE
+    : 'demo网站生成的链接随时可能失效'
+
+//Allow Cross-origin resource sharing for API requests.
+const cors = typeof (CORS) != "undefined" ? CORS : 'on'
+//console.log(`${github_repo}, ${github_version}, ${password}, ${shorten_timeout}, ${demo_mode}, ${white_list}, ${demo_notice}`)
 
 const html404 = `<!DOCTYPE html>
 <body>
   <h1>404 Not Found.</h1>
   <p>The url you visit is not found.</p>
-  <a href="https://github.com/xyTom/Url-Shorten-Worker/" target="_self">Fork me on GitHub</a>
 </body>`
 
-let response_header={
-  "content-type": "text/html;charset=UTF-8",
-} 
+let response_header = {
+    "content-type": "text/html;charset=UTF-8",
+}
 
-if (config.cors=="on"){
-  response_header={
-  "content-type": "text/html;charset=UTF-8",
-  "Access-Control-Allow-Origin":"*",
-  "Access-Control-Allow-Methods": "POST",
-  }
+if (cors == "on") {
+    response_header = {
+        "content-type": "text/html;charset=UTF-8",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST",
+    }
 }
 
 async function randomString(len) {
-　　len = len || 6;
-　　let $chars = 'ABCDEFGHJKMNPQRSTWXYZabcdefhijkmnprstwxyz2345678';    /****默认去掉了容易混淆的字符oOLl,9gq,Vv,Uu,I1****/
-　　let maxPos = $chars.length;
-　　let result = '';
-　　for (i = 0; i < len; i++) {
-　　　　result += $chars.charAt(Math.floor(Math.random() * maxPos));
-　　}
-　　return result;
+    len = len || default_len;
+    let $chars = 'ABCDEFGHJKMNPQRSTWXYZabcdefhijkmnprstwxyz2345678';    /****默认去掉了容易混淆的字符oOLl,9gq,Vv,Uu,I1****/
+    let maxPos = $chars.length;
+    let result = '';
+    for (i = 0; i < len; i++) {
+        result += $chars.charAt(Math.floor(Math.random() * maxPos));
+    }
+    return result;
 }
 
-async function sha512(url){
-    url = new TextEncoder().encode(url)
+async function checkURL(url) {
+    let str = url;
+    let Expression = /^http(s)?:\/\/(.*@)?([\w-]+\.)*[\w-]+([_\-.,~!*:#()\w\/?%&=]*)?$/;
+    let objExp = new RegExp(Expression);
+    if (objExp.test(str) == true) {
+        if (str[0] == 'h')
+            return true;
+        else
+            return false;
+    } else {
+        return false;
+    }
+}
+// 检查域名是否在白名单中，参数只包含域名部分，
+async function checkWhite(host) {
+    return white_list.some((h) => host == h || host.endsWith('.' + h))
+}
+async function md5(message) {
+    const msgUint8 = new TextEncoder().encode(message) // encode as (utf-8) Uint8Array
+    const hashBuffer = await crypto.subtle.digest('MD5', msgUint8) // hash the message
+    const hashArray = Array.from(new Uint8Array(hashBuffer)) // convert buffer to byte array
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('') // convert bytes to hex string
 
-    const url_digest = await crypto.subtle.digest(
-      {
-        name: "SHA-512",
-      },
-      url, // The data you want to hash as an ArrayBuffer
-    )
-    const hashArray = Array.from(new Uint8Array(url_digest)); // convert buffer to byte array
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    //console.log(hashHex)
     return hashHex
 }
-async function checkURL(URL){
-    let str=URL;
-    let Expression=/http(s)?:\/\/([\w-]+\.)+[\w-]+(\/[\w- .\/?%&=]*)?/;
-    let objExp=new RegExp(Expression);
-    if(objExp.test(str)==true){
-      if (str[0] == 'h')
-        return true;
-      else
-        return false;
-    }else{
-        return false;
+async function checkHash(url, hash) {
+    if (!hash) {
+        return false
     }
-} 
-async function save_url(URL){
-    let random_key=await randomString()
-    let is_exist=await LINKS.get(random_key)
-    console.log(is_exist)
-    if (is_exist == null)
-        return await LINKS.put(random_key, URL),random_key
-    else
-        save_url(URL)
+    return (await md5(url + password)) == hash
 }
-async function is_url_exist(url_sha512){
-  let is_exist = await LINKS.get(url_sha512)
-  console.log(is_exist)
-  if (is_exist == null) {
-    return false
-  }else{
-    return is_exist
-  }
+async function save_url(url, key, admin, len) {
+    len = len || default_len;
+    // 密码正确且指定了key的情况直接覆盖旧值，
+    const override = admin && key
+    if (!override) {
+        // 密码不正确情况无视指定key,
+        key = await randomString(len)
+    }
+    const is_exists = await load_url(key)
+    console.log("key exists " + key + " " + is_exists)
+    if (override || !is_exists) {
+        var mode = 3
+        if (admin) {
+            mode = 0
+        }
+        let value = `${mode};${Date.now()};${url}`
+        if (remove_completely && mode != 0 && !await checkWhite(new URL(url).host)) {
+            // 利用expirationTtl实现过期记录自动删除，低于60秒会报错，
+            let ttl = Math.max(60, shorten_timeout / 1000)
+            console.log("key auto remove: " + key + ", " + ttl + "s")
+            return await LINKS.put(key, value, { expirationTtl: ttl }), key
+        } else {
+            return await LINKS.put(key, value), key
+        }
+    } else {
+        return await save_url(url, key, admin, len + 1)
+    }
 }
-async function is_url_safe(url){
-
-  let raw = JSON.stringify({"client":{"clientId":"Url-Shorten-Worker","clientVersion":"1.0.7"},"threatInfo":{"threatTypes":["MALWARE","SOCIAL_ENGINEERING","POTENTIALLY_HARMFUL_APPLICATION","UNWANTED_SOFTWARE"],"platformTypes":["ANY_PLATFORM"],"threatEntryTypes":["URL"],"threatEntries":[{"url":url}]}});
-
-  let requestOptions = {
-    method: 'POST',
-    body: raw,
-    redirect: 'follow'
-  };
-
-  result = await fetch("https://safebrowsing.googleapis.com/v4/threatMatches:find?key="+config.safe_browsing_api_key, requestOptions)
-  result = await result.json()
-  console.log(result)
-  if (Object.keys(result).length === 0){
-    return true
-  }else{
-    return false
-  }
+async function load_url(key) {
+    const value = await LINKS.get(key)
+    if (!value) {
+        return null
+    }
+    const list = value.split(';')
+    console.log("value split " + list)
+    var url
+    if (list.length == 1) {
+        // 老数据暂且正常跳转，
+        url = list[0]
+    } else {
+        url = list[2]
+        const mode = parseInt(list[0])
+        const create_time = parseInt(list[1])
+        if (mode != 0 && shorten_timeout > 0
+            && Date.now() - create_time > shorten_timeout) {
+            const host = new URL(url).host
+            if (await checkWhite(host)) {
+                console.log('white list')
+            } else {
+                // 超时和找不到做同样的处理，
+                console.log("shorten timeout")
+                return null
+            }
+        }
+    }
+    return url
 }
 async function handleRequest(request) {
-  console.log(request)
-  if (request.method === "POST") {
-    let req=await request.json()
-    console.log(req["url"])
-    if(!await checkURL(req["url"])){
-    return new Response(`{"status":500,"key":": Error: Url illegal."}`, {
-      headers: response_header,
-    })}
-    let stat,random_key
-    if (config.unique_link){
-      let url_sha512 = await sha512(req["url"])
-      let url_key = await is_url_exist(url_sha512)
-      if(url_key){
-        random_key = url_key
-      }else{
-        stat,random_key=await save_url(req["url"])
-        if (typeof(stat) == "undefined"){
-          console.log(await LINKS.put(url_sha512,random_key))
+    console.log(request)
+    if (request.method === "POST") {
+        let req = await request.json()
+        console.log("url " + req["url"])
+        let admin = await checkHash(req["url"], req["hash"])
+        console.log("admin " + admin)
+        if (!await checkURL(req["url"]) || (!admin && !demo_mode && !await checkWhite(new URL(req["url"]).host))) {
+            // 非演示模式下，非白名单地址当成地址不合法处理，
+            return new Response(`{"status":500,"key":": Error: Url illegal."}`, {
+                headers: response_header,
+            })
         }
-      }
-    }else{
-      stat,random_key=await save_url(req["url"])
-    }
-    console.log(stat)
-    if (typeof(stat) == "undefined"){
-      return new Response(`{"status":200,"key":"/`+random_key+`"}`, {
-      headers: response_header,
-    })
-    }else{
-      return new Response(`{"status":200,"key":": Error:Reach the KV write limitation."}`, {
-      headers: response_header,
-    })}
-  }else if(request.method === "OPTIONS"){  
-      return new Response(``, {
-      headers: response_header,
-    })
-
-  }
-
-  const requestURL = new URL(request.url)
-  const path = requestURL.pathname.split("/")[1]
-  const params = requestURL.search;
-
-  console.log(path)
-  if(!path){
-
-    const html= await fetch("https://xytom.github.io/Url-Shorten-Worker/"+config.theme+"/index.html")
-    
-    return new Response(await html.text(), {
-    headers: {
-      "content-type": "text/html;charset=UTF-8",
-    },
-  })
-  }
-
-  const value = await LINKS.get(path);
-  let location ;
-
-  if(params) {
-    location = value + params
-  } else {
-      location = value
-  }
-  console.log(value)
-  
-
-  if (location) {
-    if (config.safe_browsing_api_key){
-      if(!(await is_url_safe(location))){
-        let warning_page = await fetch("https://xytom.github.io/Url-Shorten-Worker/safe-browsing.html")
-        warning_page =await warning_page.text()
-        warning_page = warning_page.replace(/{Replace}/gm, location)
-        return new Response(warning_page, {
-          headers: {
-            "content-type": "text/html;charset=UTF-8",
-          },
+        let stat, random_key = await save_url(req["url"], req["key"], admin)
+        console.log("stat " + stat)
+        if (typeof (stat) == "undefined") {
+            return new Response(`{"status":200,"key":"/` + random_key + `"}`, {
+                headers: response_header,
+            })
+        } else {
+            return new Response(`{"status":200,"key":": Error:Reach the KV write limitation."}`, {
+                headers: response_header,
+            })
+        }
+    } else if (request.method === "OPTIONS") {
+        return new Response(``, {
+            headers: response_header,
         })
-      }
+
     }
-    if (config.no_ref=="on"){
-      let no_ref= await fetch("https://xytom.github.io/Url-Shorten-Worker/no-ref.html")
-      no_ref=await no_ref.text()
-      no_ref=no_ref.replace(/{Replace}/gm, location)
-      return new Response(no_ref, {
-      headers: {
-        "content-type": "text/html;charset=UTF-8",
-      },
-    })
-    }else{
-      return Response.redirect(location, 302)
+
+    const requestURL = new URL(request.url)
+    const path = requestURL.pathname.split("/")[1]
+    console.log(path)
+    if (!path) {
+
+        const html = await fetch(`https://cdn.jsdelivr.net/gh/${github_repo}${github_version}${theme}/index.html`)
+        const text = (await html.text())
+            .replaceAll("###GITHUB_REPO###", github_repo)
+            .replaceAll("###GITHUB_VERSION###", github_version)
+            .replaceAll("###DEMO_NOTICE###", demo_notice)
+
+        return new Response(text, {
+            headers: {
+                "content-type": "text/html;charset=UTF-8",
+            },
+        })
     }
-    
-  }
-  // If request not in kv, return 404
-  return new Response(html404, {
-    headers: {
-      "content-type": "text/html;charset=UTF-8",
-    },
-    status: 404
-  })
+    const url = await load_url(path)
+    if (!url) {
+        // 找不到或者超时直接404,
+        console.log('not found')
+        return new Response(html404, {
+            headers: {
+                "content-type": "text/html;charset=UTF-8",
+            },
+            status: 404
+        })
+    }
+    return Response.redirect(url, 302)
 }
 
-
-
 addEventListener("fetch", async event => {
-  event.respondWith(handleRequest(event.request))
+    event.respondWith(handleRequest(event.request))
 })

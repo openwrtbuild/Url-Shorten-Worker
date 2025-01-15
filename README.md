@@ -1,9 +1,11 @@
+![Github Watchers](https://badgen.net/github/watchers/openwrtbuild/Url-Shorten-Worker)![Github Stars](https://badgen.net/github/stars/openwrtbuild/Url-Shorten-Worker)![Github Forks](https://badgen.net/github/forks/openwrtbuild/Url-Shorten-Worker)
+
 # Url-Shorten-Worker
 A URL Shortener created using Cloudflare Worker
 
 # API
 
-[API Documentation (API文档)](docs/API.md)
+[API Documentation](docs/API.md)[API文档](docs/API_zh-hans.md))
 
 # Getting start
 ### 去Workers KV中创建一个命名空间
@@ -12,7 +14,7 @@ Go to Workers KV and create a namespace.
 
 ![](docs/kv_create_namespace.png)
 
-### 去Worker的Settings选选项卡中绑定KV Namespace
+### 去Worker的Settings选项卡中绑定KV Namespace
 
 Bind an instance of a KV Namespace to access its data in a Worker.
 
@@ -24,6 +26,10 @@ Where Variable name should set as `LINKS` and KV namespace is the namespace you 
 
 ![](docs/worker_kv_binding.png)
 
+### 并入AoEiuV020/Url-Shorten-Worker [repo](https://github.com/AoEiuV020/Url-Shorten-Worker)的功能，配置其他环境变量参考此仓库说明（例如WHITE_LIST, PASSWORD, DEFAULT_LEN, SHORTEN_TIMEOUT）。
+
+Merge some functions from AoEiuV020/Url-Shorten-Worker [repo](https://github.com/AoEiuV020/Url-Shorten-Worker). Refer to the variable configuration (e.g. WHITE_LIST, PASSWORD, DEFAULT_LEN, SHORTEN_TIMEOUT).
+
 ### 复制本项目中的`index.js`的代码到Cloudflare Worker 
 
 Copy the `index.js` code from this project to Cloudflare Worker. 
@@ -32,15 +38,3 @@ Copy the `index.js` code from this project to Cloudflare Worker.
 
 Click Save and Deploy
 
-# Demo
-https://lnks.eu.org/
-
-Note: Because someone abuse this demo website, all the generated link will automatically expired after 24 hours. For long-term use, please deploy your own.
-
-注意：所有由Demo网站生成的链接24小时后会自动失效，如需长期使用请自行搭建。
-
-# crazypeace 修改版
-
-https://github.com/xyTom/Url-Shorten-Worker/tree/crazypeace
-
-支持功能：1、自定义短链 2、页面缓存设置过的短链 3、长链接文本框预搜索localStorage 4、增加删除某条短链的按钮 5、密码保护
