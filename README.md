@@ -30,6 +30,8 @@ Where Variable name should set as `LINKS` and KV namespace is the namespace you 
 
 Merge some functions from AoEiuV020/Url-Shorten-Worker [repo](https://github.com/AoEiuV020/Url-Shorten-Worker). Refer to the variable configuration (e.g. WHITE_LIST, PASSWORD, DEFAULT_LEN, SHORTEN_TIMEOUT).
 
+![](docs/worker_settings_variables_secrets.png)
+
 ### 复制本项目中的`index.js`的代码到Cloudflare Worker 
 
 Copy the `index.js` code from this project to Cloudflare Worker. 
