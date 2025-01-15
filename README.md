@@ -5,7 +5,7 @@ A URL Shortener created using Cloudflare Worker
 
 # API
 
-[API Documentation](docs/API.md)[API文档](docs/API_zh-hans.md))
+[API Documentation](docs/API.md)  [API文档](docs/API_zh-hans.md)
 
 # Getting start
 ### 去Workers KV中创建一个命名空间
